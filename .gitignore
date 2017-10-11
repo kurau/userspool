@@ -1,0 +1,13 @@
+.DS_Store
+
+# IDEA files
+.idea
+*.iml
+
+# Allure
+allure-results
+
+# Maven files
+target
+
+
