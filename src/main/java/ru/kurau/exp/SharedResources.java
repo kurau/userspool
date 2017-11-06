@@ -3,9 +3,7 @@ package ru.kurau.exp;
 import com.google.gson.Gson;
 import lombok.extern.java.Log;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -22,17 +20,21 @@ public class SharedResources<T> {
 
     private List<T> resources;
 
-    private final Map<Integer, Boolean> locks = new HashMap<>();
-
+    private final Locks locks;
 
     public SharedResources(List<T> resources) {
+        this(resources, new HashMapLocks());
+    }
+
+    public SharedResources(List<T> resources, Locks locks) {
         this.resources = resources;
+        this.locks = locks;
     }
 
 
     public void release(T resource) {
         synchronized (locks) {
-            locks.replace(getId(resource), false);
+            locks.unlock(getId(resource));
         }
     }
 
@@ -45,7 +47,7 @@ public class SharedResources<T> {
             throw new IllegalStateException("There isn't user by condition");
         }
 
-        return await().ignoreExceptions()
+        return await().ignoreException(IllegalStateException.class)
                 .pollInterval(1, SECONDS)
                 .atMost(10, SECONDS)
                 .until(() -> findFreeResource(available), notNullValue());
@@ -55,19 +57,18 @@ public class SharedResources<T> {
         log.info("Search resource...");
         synchronized (locks) {
             Optional<T> freeResource = available.stream()
-                    .peek(resource -> locks.putIfAbsent(getId(resource), false))
-                    .filter(resource -> !locks.get(getId(resource)))
+                    .filter(resource -> locks.isUnlocked(getId(resource)))
                     .findFirst();
 
             if (freeResource.isPresent()) {
-                locks.replace(getId(freeResource.get()), true);
+                locks.lock(getId(freeResource.get()));
                 return freeResource.get();
             }
         }
-        return null;
+        throw new IllegalStateException("Cant find free resources");
     }
 
-    private Integer getId(T resource) {
-        return new Gson().toJson(resource).hashCode();
+    private String getId(T resource) {
+        return new Gson().toJson(resource).hashCode() + "";
     }
 }
